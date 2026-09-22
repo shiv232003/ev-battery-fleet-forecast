@@ -1,0 +1,234 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EV Fleet Battery Forecast</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{ --acc:#1f77b4; --acc-dark:#155a8a; }
+  body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;
+       max-width:880px;margin:0 auto;padding:22px;background:#fafafa}
+  .top{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+  h1{font-size:19px;font-weight:700;margin:0}
+  .sub{color:#666;font-size:13px;margin:2px 0 0}
+  .nav{display:flex;border-bottom:2px solid #e2e2e2;margin-bottom:16px}
+  .nav div{font-size:14px;padding:10px 18px;cursor:pointer;color:#666;font-weight:600;
+           border-bottom:3px solid transparent;margin-bottom:-2px}
+  .nav div.on{color:var(--acc-dark);border-bottom-color:var(--acc)}
+  .controls{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+  input,select{font-size:14px;padding:8px 10px;border:1px solid #ccc;border-radius:8px;background:#fff}
+  select{min-width:360px}
+  .card{background:#fff;border:1px solid #e6e6e6;border-radius:12px;padding:18px 20px}
+  .hd{font-size:15px;font-weight:700;color:var(--acc-dark)}
+  .hdsub{color:#666;font-size:13px;margin:2px 0 16px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:18px}
+  .tile{background:#f4f7fa;border-radius:8px;padding:10px 14px;border-left:3px solid var(--acc)}
+    .tlab{font-size:12px;color:#666}.tval{font-size:21px;font-weight:700;margin-top:2px}
+  .tval small{font-size:12px;color:#999;font-weight:400}
+  .legend{display:flex;gap:14px;font-size:12px;color:#555;margin-bottom:6px;flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:5px}
+  .sw{width:15px;height:11px;display:inline-block;border-radius:2px}
+  .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:20px;background:#fff;cursor:pointer}
+  .tab.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:16px}
+  th{text-align:left;color:#555;font-weight:600;border-bottom:2px solid #e2e2e2;padding:8px 6px}
+  td{padding:8px 6px;border-bottom:1px solid #f0f0f0}
+  tr.me{background:#eef5fb}
+  .bid{font-weight:600}
+  .note{font-size:12px;color:#777;margin-top:12px;line-height:1.5}
+  .hide{display:none}
+</style></head><body>
+
+<div class="top"><div><h1>EV Fleet Battery Forecast</h1>
+  <p class="sub" id="meta"></p></div></div>
+
+<div class="nav">
+  <div id="n1" class="on" onclick="page(1)">Battery Forecast</div>
+  <div id="n2" onclick="page(2)">Battery Comparison</div>
+  <div id="n3" onclick="page(3)">Replacement Plan</div>
+</div>
+
+<div class="controls">
+  <input id="search" placeholder="Filter by vehicle or battery…" oninput="filt()">
+  <select id="pick" onchange="render(this.value)"></select>
+</div>
+
+<div id="p1" class="card">
+  <div class="hd" id="hd1"></div><div class="hdsub" id="hdsub1"></div>
+  <div class="tiles" id="tiles"></div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--acc);height:3px"></span>Expected life left (P50)</span>
+    <span><span class="sw" style="background:rgba(120,120,120,0.18)"></span>Uncertainty (P10–P90)</span>
+    <span><span class="sw" style="background:rgba(44,158,75,0.30)"></span>Healthy 100–66%</span>
+    <span><span class="sw" style="background:rgba(240,192,64,0.40)"></span>Caution 66–33%</span>
+    <span><span class="sw" style="background:rgba(214,40,40,0.30)"></span>Critical 33–0%</span>
+    <span><span class="sw" style="border-top:2px dashed #b00;height:0"></span>Swap point</span>
+  </div>
+  <div style="position:relative;height:320px"><canvas id="fan"></canvas></div>
+</div>
+
+<div id="p2" class="card hide">
+  <div class="hd" id="hd2"></div><div class="hdsub" id="hdsub2"></div>
+  <div class="tabs">
+    <div class="tab on" id="t_fade" onclick="setM('fade')">Fade rate (lower is better)</div>
+    <div class="tab" id="t_life" onclick="setM('life')">Full life (cycles)</div>
+    <div class="tab" id="t_end" onclick="setM('end')">Discharge time near end of life</div>
+  </div>
+  <div style="position:relative;height:300px"><canvas id="bars"></canvas></div>
+  <div id="tblwrap"></div>
+  <p class="note" id="note"></p>
+</div>
+
+<div id="p3" class="card hide">
+  <div class="hd" id="hd3"></div><div class="hdsub" id="hdsub3"></div>
+  <div class="tabs">
+    <div class="tab on" id="h_24" onclick="setH(24)">24 months</div>
+    <div class="tab" id="h_12" onclick="setH(12)">12 months</div>
+  </div>
+  <div class="tiles" id="ptiles"></div>
+  <div style="position:relative;height:300px"><canvas id="pbars"></canvas></div>
+  <div id="ptbl"></div>
+  <p class="note" id="pnote"></p>
+</div>
+
+<script>
+const VEH=[{"vehicle_id": "EV-001", "battery_id": "B06", "cycle": 758, "discharge_time_s": 1116.0, "pred_rul": 327.2, "unit_price": 12000}, {"vehicle_id": "EV-002", "battery_id": "B10", "cycle": 39, "discharge_time_s": 2206.0, "pred_rul": 1062.1, "unit_price": 12000}, {"vehicle_id": "EV-003", "battery_id": "B11", "cycle": 672, "discharge_time_s": 1375.0, "pred_rul": 439.6, "unit_price": 12000}, {"vehicle_id": "EV-004", "battery_id": "B11", "cycle": 589, "discharge_time_s": 1480.0, "pred_rul": 475.7, "unit_price": 12000}, {"vehicle_id": "EV-005", "battery_id": "B13", "cycle": 729, "discharge_time_s": 1299.0, "pred_rul": 371.9, "unit_price": 12000}, {"vehicle_id": "EV-006", "battery_id": "B06", "cycle": 214, "discharge_time_s": 1987.0, "pred_rul": 897.0, "unit_price": 12000}, {"vehicle_id": "EV-007", "battery_id": "B05", "cycle": 118, "discharge_time_s": 2112.0, "pred_rul": 1016.2, "unit_price": 12000}, {"vehicle_id": "EV-008", "battery_id": "B08", "cycle": 88, "discharge_time_s": 2136.0, "pred_rul": 1027.4, "unit_price": 12000}, {"vehicle_id": "EV-009", "battery_id": "B06", "cycle": 15, "discharge_time_s": 2259.0, "pred_rul": 1088.8, "unit_price": 12000}, {"vehicle_id": "EV-010", "battery_id": "B04", "cycle": 588, "discharge_time_s": 1547.0, "pred_rul": 528.0, "unit_price": 12000}, {"vehicle_id": "EV-011", "battery_id": "B11", "cycle": 517, "discharge_time_s": 1619.0, "pred_rul": 590.3, "unit_price": 12000}, {"vehicle_id": "EV-012", "battery_id": "B10", "cycle": 1005, "discharge_time_s": 996.0, "pred_rul": 121.2, "unit_price": 12000}, {"vehicle_id": "EV-013", "battery_id": "B07", "cycle": 711, "discharge_time_s": 1214.0, "pred_rul": 361.1, "unit_price": 12000}, {"vehicle_id": "EV-014", "battery_id": "B08", "cycle": 610, "discharge_time_s": 1572.0, "pred_rul": 516.5, "unit_price": 12000}, {"vehicle_id": "EV-015", "battery_id": "B08", "cycle": 1013, "discharge_time_s": 1044.0, "pred_rul": 155.4, "unit_price": 12000}, {"vehicle_id": "EV-016", "battery_id": "B09", "cycle": 22, "discharge_time_s": 2246.0, "pred_rul": 1083.8, "unit_price": 12000}, {"vehicle_id": "EV-017", "battery_id": "B13", "cycle": 453, "discharge_time_s": 1651.0, "pred_rul": 656.8, "unit_price": 12000}, {"vehicle_id": "EV-018", "battery_id": "B01", "cycle": 1044, "discharge_time_s": 997.0, "pred_rul": 147.0, "unit_price": 12000}, {"vehicle_id": "EV-019", "battery_id": "B06", "cycle": 61, "discharge_time_s": 2182.0, "pred_rul": 1046.5, "unit_price": 12000}, {"vehicle_id": "EV-020", "battery_id": "B13", "cycle": 305, "discharge_time_s": 1869.0, "pred_rul": 804.7, "unit_price": 12000}, {"vehicle_id": "EV-021", "battery_id": "B03", "cycle": 213, "discharge_time_s": 2007.0, "pred_rul": 903.6, "unit_price": 12000}, {"vehicle_id": "EV-022", "battery_id": "B06", "cycle": 685, "discharge_time_s": 1285.0, "pred_rul": 375.5, "unit_price": 12000}, {"vehicle_id": "EV-023", "battery_id": "B12", "cycle": 746, "discharge_time_s": 1336.0, "pred_rul": 386.2, "unit_price": 12000}, {"vehicle_id": "EV-024", "battery_id": "B02", "cycle": 26, "discharge_time_s": 2221.0, "pred_rul": 1082.5, "unit_price": 12000}, {"vehicle_id": "EV-025", "battery_id": "B04", "cycle": 409, "discharge_time_s": 1778.0, "pred_rul": 708.5, "unit_price": 12000}, {"vehicle_id": "EV-026", "battery_id": "B11", "cycle": 618, "discharge_time_s": 1456.0, "pred_rul": 468.3, "unit_price": 12000}, {"vehicle_id": "EV-027", "battery_id": "B13", "cycle": 449, "discharge_time_s": 1623.0, "pred_rul": 668.6, "unit_price": 12000}, {"vehicle_id": "EV-028", "battery_id": "B14", "cycle": 740, "discharge_time_s": 1147.0, "pred_rul": 267.1, "unit_price": 12000}, {"vehicle_id": "EV-029", "battery_id": "B13", "cycle": 680, "discharge_time_s": 1309.0, "pred_rul": 382.2, "unit_price": 12000}, {"vehicle_id": "EV-030", "battery_id": "B07", "cycle": 958, "discharge_time_s": 924.0, "pred_rul": 100.6, "unit_price": 12000}, {"vehicle_id": "EV-031", "battery_id": "B02", "cycle": 508, "discharge_time_s": 1584.0, "pred_rul": 597.6, "unit_price": 12000}, {"vehicle_id": "EV-032", "battery_id": "B10", "cycle": 95, "discharge_time_s": 2100.0, "pred_rul": 1002.2, "unit_price": 12000}, {"vehicle_id": "EV-033", "battery_id": "B03", "cycle": 622, "discharge_time_s": 1542.0, "pred_rul": 490.5, "unit_price": 12000}, {"vehicle_id": "EV-034", "battery_id": "B10", "cycle": 262, "discharge_time_s": 1884.0, "pred_rul": 835.5, "unit_price": 12000}, {"vehicle_id": "EV-035", "battery_id": "B03", "cycle": 971, "discharge_time_s": 1101.0, "pred_rul": 167.7, "unit_price": 12000}, {"vehicle_id": "EV-036", "battery_id": "B08", "cycle": 687, "discharge_time_s": 1380.0, "pred_rul": 454.2, "unit_price": 12000}, {"vehicle_id": "EV-037", "battery_id": "B07", "cycle": 577, "discharge_time_s": 1500.0, "pred_rul": 512.3, "unit_price": 12000}, {"vehicle_id": "EV-038", "battery_id": "B05", "cycle": 1059, "discharge_time_s": 960.0, "pred_rul": 90.2, "unit_price": 12000}, {"vehicle_id": "EV-039", "battery_id": "B14", "cycle": 692, "discharge_time_s": 1182.0, "pred_rul": 364.8, "unit_price": 12000}, {"vehicle_id": "EV-040", "battery_id": "B08", "cycle": 257, "discharge_time_s": 1932.0, "pred_rul": 859.0, "unit_price": 12000}, {"vehicle_id": "EV-041", "battery_id": "B13", "cycle": 497, "discharge_time_s": 1522.0, "pred_rul": 619.6, "unit_price": 12000}, {"vehicle_id": "EV-042", "battery_id": "B13", "cycle": 667, "discharge_time_s": 1305.0, "pred_rul": 457.3, "unit_price": 12000}, {"vehicle_id": "EV-043", "battery_id": "B09", "cycle": 817, "discharge_time_s": 1152.0, "pred_rul": 274.2, "unit_price": 12000}, {"vehicle_id": "EV-044", "battery_id": "B09", "cycle": 276, "discharge_time_s": 1857.0, "pred_rul": 802.1, "unit_price": 12000}, {"vehicle_id": "EV-045", "battery_id": "B11", "cycle": 537, "discharge_time_s": 1571.0, "pred_rul": 567.6, "unit_price": 12000}, {"vehicle_id": "EV-046", "battery_id": "B03", "cycle": 96, "discharge_time_s": 2142.0, "pred_rul": 1016.8, "unit_price": 12000}, {"vehicle_id": "EV-047", "battery_id": "B03", "cycle": 560, "discharge_time_s": 1576.0, "pred_rul": 543.0, "unit_price": 12000}, {"vehicle_id": "EV-048", "battery_id": "B05", "cycle": 45, "discharge_time_s": 2203.0, "pred_rul": 1070.2, "unit_price": 12000}, {"vehicle_id": "EV-049", "battery_id": "B08", "cycle": 309, "discharge_time_s": 1908.0, "pred_rul": 828.9, "unit_price": 12000}, {"vehicle_id": "EV-050", "battery_id": "B05", "cycle": 428, "discharge_time_s": 1716.0, "pred_rul": 698.5, "unit_price": 12000}, {"vehicle_id": "EV-051", "battery_id": "B09", "cycle": 452, "discharge_time_s": 1654.0, "pred_rul": 657.7, "unit_price": 12000}, {"vehicle_id": "EV-052", "battery_id": "B13", "cycle": 516, "discharge_time_s": 1539.0, "pred_rul": 615.9, "unit_price": 12000}, {"vehicle_id": "EV-053", "battery_id": "B09", "cycle": 702, "discharge_time_s": 1297.0, "pred_rul": 401.7, "unit_price": 12000}, {"vehicle_id": "EV-054", "battery_id": "B14", "cycle": 231, "discharge_time_s": 1931.0, "pred_rul": 875.4, "unit_price": 12000}, {"vehicle_id": "EV-055", "battery_id": "B14", "cycle": 291, "discharge_time_s": 1807.0, "pred_rul": 796.8, "unit_price": 12000}, {"vehicle_id": "EV-056", "battery_id": "B12", "cycle": 1029, "discharge_time_s": 1081.0, "pred_rul": 242.5, "unit_price": 12000}, {"vehicle_id": "EV-057", "battery_id": "B13", "cycle": 657, "discharge_time_s": 1334.0, "pred_rul": 436.7, "unit_price": 12000}, {"vehicle_id": "EV-058", "battery_id": "B14", "cycle": 79, "discharge_time_s": 2099.0, "pred_rul": 1013.5, "unit_price": 12000}, {"vehicle_id": "EV-059", "battery_id": "B04", "cycle": 559, "discharge_time_s": 1580.0, "pred_rul": 557.1, "unit_price": 12000}, {"vehicle_id": "EV-060", "battery_id": "B12", "cycle": 218, "discharge_time_s": 1989.0, "pred_rul": 898.0, "unit_price": 12000}, {"vehicle_id": "EV-061", "battery_id": "B03", "cycle": 339, "discharge_time_s": 1838.0, "pred_rul": 768.8, "unit_price": 12000}, {"vehicle_id": "EV-062", "battery_id": "B13", "cycle": 846, "discharge_time_s": 1156.0, "pred_rul": 274.3, "unit_price": 12000}, {"vehicle_id": "EV-063", "battery_id": "B03", "cycle": 866, "discharge_time_s": 1215.0, "pred_rul": 249.7, "unit_price": 12000}, {"vehicle_id": "EV-064", "battery_id": "B08", "cycle": 525, "discharge_time_s": 1656.0, "pred_rul": 591.8, "unit_price": 12000}, {"vehicle_id": "EV-065", "battery_id": "B11", "cycle": 406, "discharge_time_s": 1811.0, "pred_rul": 720.7, "unit_price": 12000}, {"vehicle_id": "EV-066", "battery_id": "B13", "cycle": 758, "discharge_time_s": 1239.0, "pred_rul": 349.1, "unit_price": 12000}, {"vehicle_id": "EV-067", "battery_id": "B14", "cycle": 1013, "discharge_time_s": 857.0, "pred_rul": 63.7, "unit_price": 12000}, {"vehicle_id": "EV-068", "battery_id": "B13", "cycle": 12, "discharge_time_s": 2261.0, "pred_rul": 1066.1, "unit_price": 12000}, {"vehicle_id": "EV-069", "battery_id": "B07", "cycle": 124, "discharge_time_s": 2099.0, "pred_rul": 996.2, "unit_price": 12000}, {"vehicle_id": "EV-070", "battery_id": "B05", "cycle": 46, "discharge_time_s": 2201.0, "pred_rul": 1077.1, "unit_price": 12000}, {"vehicle_id": "EV-071", "battery_id": "B07", "cycle": 510, "discharge_time_s": 1544.0, "pred_rul": 607.0, "unit_price": 12000}, {"vehicle_id": "EV-072", "battery_id": "B10", "cycle": 202, "discharge_time_s": 1944.0, "pred_rul": 878.3, "unit_price": 12000}, {"vehicle_id": "EV-073", "battery_id": "B14", "cycle": 279, "discharge_time_s": 1828.0, "pred_rul": 798.1, "unit_price": 12000}, {"vehicle_id": "EV-074", "battery_id": "B01", "cycle": 176, "discharge_time_s": 2032.0, "pred_rul": 928.2, "unit_price": 12000}, {"vehicle_id": "EV-075", "battery_id": "B05", "cycle": 302, "discharge_time_s": 1870.0, "pred_rul": 810.6, "unit_price": 12000}, {"vehicle_id": "EV-076", "battery_id": "B06", "cycle": 654, "discharge_time_s": 1364.0, "pred_rul": 442.2, "unit_price": 12000}, {"vehicle_id": "EV-077", "battery_id": "B08", "cycle": 414, "discharge_time_s": 1764.0, "pred_rul": 715.7, "unit_price": 12000}, {"vehicle_id": "EV-078", "battery_id": "B07", "cycle": 781, "discharge_time_s": 1118.0, "pred_rul": 281.0, "unit_price": 12000}, {"vehicle_id": "EV-079", "battery_id": "B10", "cycle": 132, "discharge_time_s": 2053.0, "pred_rul": 968.4, "unit_price": 12000}, {"vehicle_id": "EV-080", "battery_id": "B02", "cycle": 14, "discharge_time_s": 2248.0, "pred_rul": 1090.8, "unit_price": 12000}, {"vehicle_id": "EV-081", "battery_id": "B02", "cycle": 1052, "discharge_time_s": 880.0, "pred_rul": 55.6, "unit_price": 12000}, {"vehicle_id": "EV-082", "battery_id": "B04", "cycle": 388, "discharge_time_s": 1777.0, "pred_rul": 720.2, "unit_price": 12000}, {"vehicle_id": "EV-083", "battery_id": "B03", "cycle": 1018, "discharge_time_s": 1038.0, "pred_rul": 129.4, "unit_price": 12000}, {"vehicle_id": "EV-084", "battery_id": "B10", "cycle": 10, "discharge_time_s": 6030.0, "pred_rul": 1103.5, "unit_price": 12000}, {"vehicle_id": "EV-085", "battery_id": "B13", "cycle": 963, "discharge_time_s": 1059.0, "pred_rul": 160.5, "unit_price": 12000}, {"vehicle_id": "EV-086", "battery_id": "B05", "cycle": 796, "discharge_time_s": 1248.0, "pred_rul": 354.1, "unit_price": 12000}, {"vehicle_id": "EV-087", "battery_id": "B03", "cycle": 874, "discharge_time_s": 1204.0, "pred_rul": 243.6, "unit_price": 12000}, {"vehicle_id": "EV-088", "battery_id": "B09", "cycle": 906, "discharge_time_s": 1069.0, "pred_rul": 186.0, "unit_price": 12000}, {"vehicle_id": "EV-089", "battery_id": "B04", "cycle": 511, "discharge_time_s": 1619.0, "pred_rul": 607.1, "unit_price": 12000}, {"vehicle_id": "EV-090", "battery_id": "B14", "cycle": 62, "discharge_time_s": 2142.0, "pred_rul": 1026.4, "unit_price": 12000}, {"vehicle_id": "EV-091", "battery_id": "B04", "cycle": 489, "discharge_time_s": 1615.0, "pred_rul": 619.6, "unit_price": 12000}, {"vehicle_id": "EV-092", "battery_id": "B11", "cycle": 104, "discharge_time_s": 2122.0, "pred_rul": 1003.4, "unit_price": 12000}, {"vehicle_id": "EV-093", "battery_id": "B09", "cycle": 942, "discharge_time_s": 1027.0, "pred_rul": 136.5, "unit_price": 12000}, {"vehicle_id": "EV-094", "battery_id": "B11", "cycle": 667, "discharge_time_s": 1371.0, "pred_rul": 435.2, "unit_price": 12000}, {"vehicle_id": "EV-095", "battery_id": "B03", "cycle": 916, "discharge_time_s": 1172.0, "pred_rul": 247.1, "unit_price": 12000}, {"vehicle_id": "EV-096", "battery_id": "B08", "cycle": 462, "discharge_time_s": 1704.0, "pred_rul": 671.6, "unit_price": 12000}, {"vehicle_id": "EV-097", "battery_id": "B02", "cycle": 343, "discharge_time_s": 1785.0, "pred_rul": 756.6, "unit_price": 12000}, {"vehicle_id": "EV-098", "battery_id": "B07", "cycle": 544, "discharge_time_s": 1550.0, "pred_rul": 550.0, "unit_price": 12000}, {"vehicle_id": "EV-099", "battery_id": "B06", "cycle": 775, "discharge_time_s": 1097.0, "pred_rul": 246.2, "unit_price": 12000}, {"vehicle_id": "EV-100", "battery_id": "B02", "cycle": 764, "discharge_time_s": 1141.0, "pred_rul": 239.6, "unit_price": 12000}, {"vehicle_id": "EV-101", "battery_id": "B11", "cycle": 814, "discharge_time_s": 1323.0, "pred_rul": 373.1, "unit_price": 12000}, {"vehicle_id": "EV-102", "battery_id": "B08", "cycle": 444, "discharge_time_s": 1704.0, "pred_rul": 663.8, "unit_price": 12000}, {"vehicle_id": "EV-103", "battery_id": "B04", "cycle": 971, "discharge_time_s": 1092.0, "pred_rul": 167.4, "unit_price": 12000}, {"vehicle_id": "EV-104", "battery_id": "B11", "cycle": 974, "discharge_time_s": 1129.0, "pred_rul": 167.5, "unit_price": 12000}, {"vehicle_id": "EV-105", "battery_id": "B02", "cycle": 550, "discharge_time_s": 1617.0, "pred_rul": 561.6, "unit_price": 12000}, {"vehicle_id": "EV-106", "battery_id": "B12", "cycle": 735, "discharge_time_s": 1346.0, "pred_rul": 403.1, "unit_price": 12000}, {"vehicle_id": "EV-107", "battery_id": "B01", "cycle": 770, "discharge_time_s": 1221.0, "pred_rul": 384.2, "unit_price": 12000}, {"vehicle_id": "EV-108", "battery_id": "B08", "cycle": 253, "discharge_time_s": 1920.0, "pred_rul": 847.1, "unit_price": 12000}, {"vehicle_id": "EV-109", "battery_id": "B03", "cycle": 713, "discharge_time_s": 1386.0, "pred_rul": 412.6, "unit_price": 12000}, {"vehicle_id": "EV-110", "battery_id": "B02", "cycle": 347, "discharge_time_s": 1778.0, "pred_rul": 756.6, "unit_price": 12000}, {"vehicle_id": "EV-111", "battery_id": "B04", "cycle": 853, "discharge_time_s": 1238.0, "pred_rul": 285.9, "unit_price": 12000}, {"vehicle_id": "EV-112", "battery_id": "B02", "cycle": 975, "discharge_time_s": 954.0, "pred_rul": 101.3, "unit_price": 12000}, {"vehicle_id": "EV-113", "battery_id": "B12", "cycle": 324, "discharge_time_s": 1861.0, "pred_rul": 799.6, "unit_price": 12000}, {"vehicle_id": "EV-114", "battery_id": "B02", "cycle": 657, "discharge_time_s": 1474.0, "pred_rul": 472.3, "unit_price": 12000}, {"vehicle_id": "EV-115", "battery_id": "B12", "cycle": 731, "discharge_time_s": 1363.0, "pred_rul": 398.7, "unit_price": 12000}, {"vehicle_id": "EV-116", "battery_id": "B13", "cycle": 629, "discharge_time_s": 1394.0, "pred_rul": 453.8, "unit_price": 12000}, {"vehicle_id": "EV-117", "battery_id": "B12", "cycle": 711, "discharge_time_s": 1401.0, "pred_rul": 417.8, "unit_price": 12000}, {"vehicle_id": "EV-118", "battery_id": "B09", "cycle": 644, "discharge_time_s": 1437.0, "pred_rul": 438.2, "unit_price": 12000}, {"vehicle_id": "EV-119", "battery_id": "B02", "cycle": 1015, "discharge_time_s": 921.0, "pred_rul": 78.3, "unit_price": 12000}, {"vehicle_id": "EV-120", "battery_id": "B03", "cycle": 778, "discharge_time_s": 1310.0, "pred_rul": 338.8, "unit_price": 12000}, {"vehicle_id": "EV-121", "battery_id": "B06", "cycle": 467, "discharge_time_s": 1623.0, "pred_rul": 617.1, "unit_price": 12000}, {"vehicle_id": "EV-122", "battery_id": "B06", "cycle": 86, "discharge_time_s": 2139.0, "pred_rul": 1020.3, "unit_price": 12000}, {"vehicle_id": "EV-123", "battery_id": "B07", "cycle": 62, "discharge_time_s": 2186.0, "pred_rul": 1044.0, "unit_price": 12000}, {"vehicle_id": "EV-124", "battery_id": "B01", "cycle": 226, "discharge_time_s": 1981.0, "pred_rul": 884.0, "unit_price": 12000}, {"vehicle_id": "EV-125", "battery_id": "B02", "cycle": 746, "discharge_time_s": 1194.0, "pred_rul": 316.3, "unit_price": 12000}, {"vehicle_id": "EV-126", "battery_id": "B01", "cycle": 362, "discharge_time_s": 1831.0, "pred_rul": 766.8, "unit_price": 12000}, {"vehicle_id": "EV-127", "battery_id": "B08", "cycle": 856, "discharge_time_s": 1164.0, "pred_rul": 260.6, "unit_price": 12000}, {"vehicle_id": "EV-128", "battery_id": "B14", "cycle": 209, "discharge_time_s": 1978.0, "pred_rul": 899.4, "unit_price": 12000}, {"vehicle_id": "EV-129", "battery_id": "B13", "cycle": 562, "discharge_time_s": 1465.0, "pred_rul": 583.6, "unit_price": 12000}, {"vehicle_id": "EV-130", "battery_id": "B01", "cycle": 175, "discharge_time_s": 2033.0, "pred_rul": 928.5, "unit_price": 12000}, {"vehicle_id": "EV-131", "battery_id": "B02", "cycle": 607, "discharge_time_s": 1564.0, "pred_rul": 527.1, "unit_price": 12000}, {"vehicle_id": "EV-132", "battery_id": "B04", "cycle": 1048, "discharge_time_s": 995.0, "pred_rul": 81.8, "unit_price": 12000}, {"vehicle_id": "EV-133", "battery_id": "B05", "cycle": 53, "discharge_time_s": 2189.0, "pred_rul": 1074.5, "unit_price": 12000}, {"vehicle_id": "EV-134", "battery_id": "B14", "cycle": 471, "discharge_time_s": 1546.0, "pred_rul": 624.1, "unit_price": 12000}, {"vehicle_id": "EV-135", "battery_id": "B07", "cycle": 40, "discharge_time_s": 2217.0, "pred_rul": 1069.3, "unit_price": 12000}, {"vehicle_id": "EV-136", "battery_id": "B08", "cycle": 694, "discharge_time_s": 1368.0, "pred_rul": 447.5, "unit_price": 12000}, {"vehicle_id": "EV-137", "battery_id": "B02", "cycle": 221, "discharge_time_s": 1939.0, "pred_rul": 888.3, "unit_price": 12000}, {"vehicle_id": "EV-138", "battery_id": "B09", "cycle": 845, "discharge_time_s": 1121.0, "pred_rul": 261.3, "unit_price": 12000}, {"vehicle_id": "EV-139", "battery_id": "B01", "cycle": 877, "discharge_time_s": 1150.0, "pred_rul": 255.4, "unit_price": 12000}, {"vehicle_id": "EV-140", "battery_id": "B12", "cycle": 862, "discharge_time_s": 1225.0, "pred_rul": 304.0, "unit_price": 12000}, {"vehicle_id": "EV-141", "battery_id": "B03", "cycle": 945, "discharge_time_s": 1138.0, "pred_rul": 218.1, "unit_price": 12000}, {"vehicle_id": "EV-142", "battery_id": "B06", "cycle": 641, "discharge_time_s": 1400.0, "pred_rul": 447.6, "unit_price": 12000}, {"vehicle_id": "EV-143", "battery_id": "B10", "cycle": 636, "discharge_time_s": 1380.0, "pred_rul": 506.2, "unit_price": 12000}, {"vehicle_id": "EV-144", "battery_id": "B09", "cycle": 975, "discharge_time_s": 982.0, "pred_rul": 108.9, "unit_price": 12000}, {"vehicle_id": "EV-145", "battery_id": "B11", "cycle": 823, "discharge_time_s": 1308.0, "pred_rul": 310.5, "unit_price": 12000}, {"vehicle_id": "EV-146", "battery_id": "B07", "cycle": 15, "discharge_time_s": 2264.0, "pred_rul": 1090.5, "unit_price": 12000}, {"vehicle_id": "EV-147", "battery_id": "B14", "cycle": 872, "discharge_time_s": 1016.0, "pred_rul": 158.5, "unit_price": 12000}, {"vehicle_id": "EV-148", "battery_id": "B11", "cycle": 664, "discharge_time_s": 1383.0, "pred_rul": 441.1, "unit_price": 12000}, {"vehicle_id": "EV-149", "battery_id": "B10", "cycle": 880, "discharge_time_s": 1116.0, "pred_rul": 253.1, "unit_price": 12000}, {"vehicle_id": "EV-150", "battery_id": "B13", "cycle": 911, "discharge_time_s": 1085.0, "pred_rul": 219.0, "unit_price": 12000}, {"vehicle_id": "EV-151", "battery_id": "B10", "cycle": 791, "discharge_time_s": 1200.0, "pred_rul": 358.2, "unit_price": 12000}, {"vehicle_id": "EV-152", "battery_id": "B14", "cycle": 29, "discharge_time_s": 2179.0, "pred_rul": 1075.6, "unit_price": 12000}, {"vehicle_id": "EV-153", "battery_id": "B09", "cycle": 500, "discharge_time_s": 1566.0, "pred_rul": 605.6, "unit_price": 12000}, {"vehicle_id": "EV-154", "battery_id": "B05", "cycle": 382, "discharge_time_s": 1788.0, "pred_rul": 730.4, "unit_price": 12000}, {"vehicle_id": "EV-155", "battery_id": "B12", "cycle": 906, "discharge_time_s": 1195.0, "pred_rul": 348.7, "unit_price": 12000}, {"vehicle_id": "EV-156", "battery_id": "B03", "cycle": 282, "discharge_time_s": 1894.0, "pred_rul": 817.0, "unit_price": 12000}, {"vehicle_id": "EV-157", "battery_id": "B03", "cycle": 169, "discharge_time_s": 2050.0, "pred_rul": 941.0, "unit_price": 12000}, {"vehicle_id": "EV-158", "battery_id": "B02", "cycle": 408, "discharge_time_s": 1728.0, "pred_rul": 705.1, "unit_price": 12000}, {"vehicle_id": "EV-159", "battery_id": "B08", "cycle": 352, "discharge_time_s": 1824.0, "pred_rul": 786.8, "unit_price": 12000}, {"vehicle_id": "EV-160", "battery_id": "B05", "cycle": 967, "discharge_time_s": 1068.0, "pred_rul": 170.8, "unit_price": 12000}, {"vehicle_id": "EV-161", "battery_id": "B02", "cycle": 638, "discharge_time_s": 1502.0, "pred_rul": 490.7, "unit_price": 12000}, {"vehicle_id": "EV-162", "battery_id": "B10", "cycle": 523, "discharge_time_s": 1548.0, "pred_rul": 626.7, "unit_price": 12000}, {"vehicle_id": "EV-163", "battery_id": "B04", "cycle": 466, "discharge_time_s": 1723.0, "pred_rul": 664.7, "unit_price": 12000}, {"vehicle_id": "EV-164", "battery_id": "B02", "cycle": 1034, "discharge_time_s": 889.0, "pred_rul": 59.7, "unit_price": 12000}, {"vehicle_id": "EV-165", "battery_id": "B12", "cycle": 889, "discharge_time_s": 1215.0, "pred_rul": 312.5, "unit_price": 12000}, {"vehicle_id": "EV-166", "battery_id": "B05", "cycle": 115, "discharge_time_s": 2112.0, "pred_rul": 1016.1, "unit_price": 12000}, {"vehicle_id": "EV-167", "battery_id": "B14", "cycle": 850, "discharge_time_s": 1032.0, "pred_rul": 145.7, "unit_price": 12000}, {"vehicle_id": "EV-168", "battery_id": "B08", "cycle": 536, "discharge_time_s": 1644.0, "pred_rul": 588.0, "unit_price": 12000}, {"vehicle_id": "EV-169", "battery_id": "B08", "cycle": 515, "discharge_time_s": 1608.0, "pred_rul": 607.6, "unit_price": 12000}, {"vehicle_id": "EV-170", "battery_id": "B07", "cycle": 343, "discharge_time_s": 1807.0, "pred_rul": 772.2, "unit_price": 12000}, {"vehicle_id": "EV-171", "battery_id": "B04", "cycle": 710, "discharge_time_s": 1402.0, "pred_rul": 412.2, "unit_price": 12000}, {"vehicle_id": "EV-172", "battery_id": "B12", "cycle": 454, "discharge_time_s": 1716.0, "pred_rul": 666.0, "unit_price": 12000}, {"vehicle_id": "EV-173", "battery_id": "B14", "cycle": 321, "discharge_time_s": 1789.0, "pred_rul": 749.3, "unit_price": 12000}, {"vehicle_id": "EV-174", "battery_id": "B03", "cycle": 491, "discharge_time_s": 1599.0, "pred_rul": 608.5, "unit_price": 12000}, {"vehicle_id": "EV-175", "battery_id": "B10", "cycle": 304, "discharge_time_s": 1872.0, "pred_rul": 803.7, "unit_price": 12000}, {"vehicle_id": "EV-176", "battery_id": "B08", "cycle": 669, "discharge_time_s": 1440.0, "pred_rul": 470.4, "unit_price": 12000}, {"vehicle_id": "EV-177", "battery_id": "B04", "cycle": 633, "discharge_time_s": 1523.0, "pred_rul": 478.3, "unit_price": 12000}, {"vehicle_id": "EV-178", "battery_id": "B03", "cycle": 817, "discharge_time_s": 1275.0, "pred_rul": 331.2, "unit_price": 12000}, {"vehicle_id": "EV-179", "battery_id": "B14", "cycle": 452, "discharge_time_s": 1605.0, "pred_rul": 636.8, "unit_price": 12000}, {"vehicle_id": "EV-180", "battery_id": "B05", "cycle": 1065, "discharge_time_s": 948.0, "pred_rul": 68.0, "unit_price": 12000}, {"vehicle_id": "EV-181", "battery_id": "B13", "cycle": 110, "discharge_time_s": 2102.0, "pred_rul": 1003.4, "unit_price": 12000}, {"vehicle_id": "EV-182", "battery_id": "B04", "cycle": 849, "discharge_time_s": 1230.0, "pred_rul": 261.9, "unit_price": 12000}, {"vehicle_id": "EV-183", "battery_id": "B09", "cycle": 459, "discharge_time_s": 1630.0, "pred_rul": 644.4, "unit_price": 12000}, {"vehicle_id": "EV-184", "battery_id": "B08", "cycle": 502, "discharge_time_s": 1644.0, "pred_rul": 624.1, "unit_price": 12000}, {"vehicle_id": "EV-185", "battery_id": "B01", "cycle": 336, "discharge_time_s": 1871.0, "pred_rul": 798.8, "unit_price": 12000}, {"vehicle_id": "EV-186", "battery_id": "B11", "cycle": 176, "discharge_time_s": 2034.0, "pred_rul": 934.6, "unit_price": 12000}, {"vehicle_id": "EV-187", "battery_id": "B07", "cycle": 281, "discharge_time_s": 1886.0, "pred_rul": 843.9, "unit_price": 12000}, {"vehicle_id": "EV-188", "battery_id": "B07", "cycle": 873, "discharge_time_s": 1034.0, "pred_rul": 183.0, "unit_price": 12000}, {"vehicle_id": "EV-189", "battery_id": "B14", "cycle": 611, "discharge_time_s": 1311.0, "pred_rul": 487.8, "unit_price": 12000}, {"vehicle_id": "EV-190", "battery_id": "B10", "cycle": 521, "discharge_time_s": 1548.0, "pred_rul": 631.0, "unit_price": 12000}, {"vehicle_id": "EV-191", "battery_id": "B02", "cycle": 737, "discharge_time_s": 1207.0, "pred_rul": 324.4, "unit_price": 12000}, {"vehicle_id": "EV-192", "battery_id": "B11", "cycle": 451, "discharge_time_s": 1737.0, "pred_rul": 663.1, "unit_price": 12000}, {"vehicle_id": "EV-193", "battery_id": "B04", "cycle": 909, "discharge_time_s": 1151.0, "pred_rul": 221.7, "unit_price": 12000}, {"vehicle_id": "EV-194", "battery_id": "B13", "cycle": 709, "discharge_time_s": 1329.0, "pred_rul": 360.8, "unit_price": 12000}, {"vehicle_id": "EV-195", "battery_id": "B10", "cycle": 1012, "discharge_time_s": 984.0, "pred_rul": 99.5, "unit_price": 12000}, {"vehicle_id": "EV-196", "battery_id": "B08", "cycle": 918, "discharge_time_s": 1140.0, "pred_rul": 254.8, "unit_price": 12000}, {"vehicle_id": "EV-197", "battery_id": "B04", "cycle": 266, "discharge_time_s": 1919.0, "pred_rul": 842.4, "unit_price": 12000}, {"vehicle_id": "EV-198", "battery_id": "B14", "cycle": 745, "discharge_time_s": 1131.0, "pred_rul": 257.8, "unit_price": 12000}, {"vehicle_id": "EV-199", "battery_id": "B08", "cycle": 517, "discharge_time_s": 1677.0, "pred_rul": 623.3, "unit_price": 12000}, {"vehicle_id": "EV-200", "battery_id": "B12", "cycle": 841, "discharge_time_s": 1252.0, "pred_rul": 283.3, "unit_price": 12000}], BENCH=[{"battery_id": "B01", "n": 1062, "full_life": 1113.0, "start_dt": 2231.0, "end_dt": 944.0, "fade_100": 142.9}, {"battery_id": "B02", "n": 1064, "full_life": 1108.0, "start_dt": 2215.0, "end_dt": 842.0, "fade_100": 145.8}, {"battery_id": "B03", "n": 1064, "full_life": 1108.0, "start_dt": 2241.0, "end_dt": 964.0, "fade_100": 133.1}, {"battery_id": "B04", "n": 1066, "full_life": 1108.0, "start_dt": 2239.0, "end_dt": 950.0, "fade_100": 133.9}, {"battery_id": "B05", "n": 1058, "full_life": 1134.0, "start_dt": 2226.0, "end_dt": 899.0, "fade_100": 141.2}, {"battery_id": "B06", "n": 1062, "full_life": 1103.0, "start_dt": 2229.0, "end_dt": 822.0, "fade_100": 153.1}, {"battery_id": "B07", "n": 1066, "full_life": 1108.0, "start_dt": 2231.0, "end_dt": 793.0, "fade_100": 153.6}, {"battery_id": "B08", "n": 1063, "full_life": 1105.0, "start_dt": 2231.0, "end_dt": 972.0, "fade_100": 137.6}, {"battery_id": "B09", "n": 1065, "full_life": 1108.0, "start_dt": 2232.0, "end_dt": 838.0, "fade_100": 143.0}, {"battery_id": "B10", "n": 1067, "full_life": 1108.0, "start_dt": 2219.0, "end_dt": 911.0, "fade_100": 139.0}, {"battery_id": "B11", "n": 1062, "full_life": 1108.0, "start_dt": 2228.0, "end_dt": 1001.0, "fade_100": 129.6}, {"battery_id": "B12", "n": 1061, "full_life": 1108.0, "start_dt": 2228.0, "end_dt": 1025.0, "fade_100": 129.2}, {"battery_id": "B13", "n": 1053, "full_life": 1114.0, "start_dt": 2222.0, "end_dt": 935.0, "fade_100": 137.2}, {"battery_id": "B14", "n": 1026, "full_life": 1112.0, "start_dt": 2179.0, "end_dt": 797.0, "fade_100": 147.1}], WEEKLY=7, LABOR=800,
+      BUFFER=50, NEWPACK=1108.0, CONF="99%", Z=1.2816;
+const HI='#155a8a', GREY='#b0b6bc';
+let CUR=null,PAGE=1,METRIC='fade',chart1=null,chart2=null;
+document.getElementById('meta').textContent=
+  VEH.length.toLocaleString()+' vehicles · '+BENCH.length+' real batteries · data confidence '+CONF+' · validated battery-life model';
+VEH.forEach(function(t){var rem=Math.max(t.pred_rul-BUFFER,0);
+  t.c50=rem; t.c10=rem/(1+Z*0.2); t.c90=rem/(1-Z*0.2);
+  t.w50=t.c50/WEEKLY; t.w10=t.c10/WEEKLY; t.w90=t.c90/WEEKLY;});
+VEH.sort(function(a,b){return a.w50-b.w50;});     // most urgent first
+function label(t){return t.vehicle_id+' · battery '+t.battery_id+' · '+Math.round(t.w50)+' wks left';}
+function fillOpts(l){var s=document.getElementById('pick');s.innerHTML='';
+  l.forEach(function(t){var o=document.createElement('option');o.value=VEH.indexOf(t);
+    o.textContent=label(t);s.appendChild(o);});}
+function filt(){var q=document.getElementById('search').value.toLowerCase();
+  var l=VEH.filter(function(t){return label(t).toLowerCase().indexOf(q)>-1;});
+  var u=l.length?l:VEH; fillOpts(u); if(u.length) render(document.getElementById('pick').value);}
+function page(p){PAGE=p;
+  document.getElementById('n1').classList.toggle('on',p===1);
+  document.getElementById('n2').classList.toggle('on',p===2);
+  document.getElementById('p1').classList.toggle('hide',p!==1);
+  document.getElementById('p2').classList.toggle('hide',p!==2);
+  document.getElementById('n3').classList.toggle('on',p===3);document.getElementById('p3').classList.toggle('hide',p!==3);document.getElementById('search').parentElement.style.display=(p===3?'none':'flex');if(p===3){draw3();return;}if(CUR){p===1?draw1():draw2();}}
+function setM(m){METRIC=m;['fade','life','end'].forEach(function(k){
+  document.getElementById('t_'+k).classList.toggle('on',k===m);}); if(CUR)draw2();}
+function money(n){return '$'+Math.round(n).toLocaleString();}
+function render(i){var t=VEH[i]; if(!t)return; CUR=t; PAGE===1?draw1():draw2();}
+
+// Health zones behind the forecast chart: share of a NEW pack's life left
+var zones={id:'zones',beforeDatasetsDraw:function(c){if(!CUR)return;
+  var ctx=c.ctx,a=c.chartArea,y=c.scales.y;
+  [[9,0.66,'rgba(44,158,75,0.13)'],[0.66,0.33,'rgba(240,192,64,0.18)'],
+   [0.33,0,'rgba(214,40,40,0.13)']].forEach(function(z){
+    var top=Math.max(y.getPixelForValue(NEWPACK*z[0]),a.top),
+        bot=Math.min(y.getPixelForValue(NEWPACK*z[1]),a.bottom);
+    if(bot>top){ctx.fillStyle=z[2]; ctx.fillRect(a.left,top,a.right-a.left,bot-top);}});}};
+
+function draw1(){var t=CUR;
+  document.getElementById('hd1').textContent='Vehicle '+t.vehicle_id;
+  document.getElementById('hdsub1').textContent='Battery '+t.battery_id+' · cycle '+t.cycle.toLocaleString()+
+    ' · discharge time '+Math.round(t.discharge_time_s).toLocaleString()+' s (healthy ~1,500 s)';
+  document.getElementById('tiles').innerHTML=
+    '<div class="tile"><div class="tlab">Pack life left</div><div class="tval">'+Math.round(100*t.pred_rul/NEWPACK)+'<small> %</small></div></div>'+
+    '<div class="tile"><div class="tlab">Cycles to swap (P50)</div><div class="tval">'+Math.round(t.c50).toLocaleString()+'</div></div>'+
+    '<div class="tile"><div class="tlab">P10–P90 range</div><div class="tval">'+Math.round(t.c10).toLocaleString()+'<small> – '+Math.round(t.c90).toLocaleString()+'</small></div></div>'+
+    '<div class="tile"><div class="tlab">Swap in (P50)</div><div class="tval">'+Math.round(t.w50)+'<small> wks</small></div></div>'+
+    '<div class="tile"><div class="tlab">Est. cost</div><div class="tval">'+money(t.unit_price+LABOR)+'</div></div>';
+  var N=40,xs=[],k; for(k=0;k<=N;k++){xs.push(+(t.w90*k/N).toFixed(1));}
+  function line(w){return xs.map(function(x){return x<=w?+(t.pred_rul-(t.pred_rul-BUFFER)*(x/w)).toFixed(1):null;});}
+  var ACC=getComputedStyle(document.body).getPropertyValue('--acc').trim()||'#1f77b4';
+  var ds=[{data:xs.map(function(){return BUFFER;}),borderColor:'#b00',borderDash:[6,4],borderWidth:1.5,pointRadius:0},
+    {data:line(t.w90),borderColor:'transparent',pointRadius:0},
+    {data:line(t.w10),borderColor:'transparent',pointRadius:0,backgroundColor:'rgba(120,120,120,0.16)',fill:'-1'},
+    {data:line(t.w50),borderColor:ACC,borderWidth:3,pointRadius:0}];
+  if(chart1)chart1.destroy();
+  chart1=new Chart(document.getElementById('fan'),{type:'line',data:{labels:xs,datasets:ds},plugins:[zones],
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{filter:function(i){return i.datasetIndex===3;},callbacks:{
+        title:function(c){return 'Week '+c[0].parsed.x;},
+        label:function(c){return Math.round(c.parsed.y).toLocaleString()+' cycles left ('+Math.round(100*c.parsed.y/NEWPACK)+'%)';}}}},
+      scales:{x:{type:'linear',title:{display:true,text:'Weeks from now'},grid:{display:false}},
+              y:{min:0,max:Math.ceil(Math.max(NEWPACK,t.pred_rul)),title:{display:true,text:'Cycles of life left'}}}}});}
+
+var META={fade:{key:'fade_100', lab:'Seconds of discharge time lost per 100 cycles', hi:false},
+          life:{key:'full_life',lab:'Full life (cycles)',                           hi:true},
+          end: {key:'end_dt',   lab:'Discharge time near end of life (s)',          hi:true}};
+function draw2(){var t=CUR,m=META[METRIC],rows=BENCH.slice();
+  var rank=BENCH.slice().sort(function(a,b){return a.fade_100-b.fade_100;})
+                .findIndex(function(r){return r.battery_id===t.battery_id;})+1;
+  document.getElementById('hd2').textContent='Battery '+t.battery_id+' vs the other '+(BENCH.length-1);
+  document.getElementById('hdsub2').textContent='Selected vehicle '+t.vehicle_id+' · ranks #'+rank+' of '+BENCH.length+' on fade rate (slowest fade = #1)';
+  if(chart2){chart2.destroy();chart2=null;}
+  rows.sort(function(a,b){return m.hi?b[m.key]-a[m.key]:a[m.key]-b[m.key];});
+  chart2=new Chart(document.getElementById('bars'),{type:'bar',
+    data:{labels:rows.map(function(r){return r.battery_id;}),
+      datasets:[{data:rows.map(function(r){return r[m.key];}),
+        backgroundColor:rows.map(function(r){return r.battery_id===t.battery_id?HI:GREY;}),borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:function(c){return m.lab+': '+c.parsed.y.toLocaleString()+
+        '  (n='+rows[c.dataIndex].n+' cycles)';}}}},
+      scales:{y:{beginAtZero:true,title:{display:true,text:m.lab}},x:{grid:{display:false}}}}});
+  document.getElementById('tblwrap').innerHTML='<table><thead><tr><th>Battery</th><th>Cycles on record</th>'+
+    '<th>Full life (cycles)</th><th>Discharge time new (s)</th><th>Near end (s)</th><th>Fade /100 cycles (s)</th></tr></thead><tbody>'+
+    rows.map(function(r){return '<tr class="'+(r.battery_id===t.battery_id?'me':'')+'">'+
+      '<td class="bid">'+r.battery_id+'</td><td>'+r.n.toLocaleString()+'</td>'+
+      '<td>'+Math.round(r.full_life).toLocaleString()+'</td><td>'+Math.round(r.start_dt).toLocaleString()+'</td>'+
+      '<td>'+Math.round(r.end_dt).toLocaleString()+'</td><td>'+r.fade_100.toFixed(1)+'</td></tr>';}).join('')+'</tbody></table>';
+  document.getElementById('note').innerHTML=
+    'All 14 batteries were tested under the same lab conditions, so full life is nearly identical (~1,100 cycles). '+
+    'Fade rate — how fast discharge time shrinks — is where they differ, and it is the best early warning of a weaker pack. '+
+    'Highlighted = selected vehicle\'s battery.<br>Source: Battery RUL dataset (Hawaii Natural Energy Institute, via Kaggle, CC0). '+
+    'Pack cost, usage rate and fleet size are planning assumptions.';}
+fillOpts(VEH); render(0);
+</script>
+
+<script>
+const PLANS={"12": {"months": 12, "u10": 64.0, "u50": 72.5, "u90": 81.0, "c10": 819200.0, "c50": 928000.0, "c90": 1036800.0, "per_vehicle_yr": 4640.0, "rows": [{"quarter": "Q1", "u10": 12.0, "u50": 15.0, "u90": 18.0, "spend": 192000.0}, {"quarter": "Q2", "u10": 12.0, "u50": 16.0, "u90": 21.0, "spend": 204800.0}, {"quarter": "Q3", "u10": 16.0, "u50": 20.0, "u90": 26.0, "spend": 256000.0}, {"quarter": "Q4", "u10": 15.0, "u50": 20.0, "u90": 26.0, "spend": 256000.0}]}, "24": {"months": 24, "u10": 132.0, "u50": 145.0, "u90": 156.1, "c10": 1689600.0, "c50": 1856000.0, "c90": 1998080.0, "per_vehicle_yr": 4640.0, "rows": [{"quarter": "Q1", "u10": 12.0, "u50": 15.0, "u90": 18.0, "spend": 192000.0}, {"quarter": "Q2", "u10": 12.0, "u50": 16.0, "u90": 21.0, "spend": 204800.0}, {"quarter": "Q3", "u10": 16.0, "u50": 20.0, "u90": 26.0, "spend": 256000.0}, {"quarter": "Q4", "u10": 15.0, "u50": 20.0, "u90": 26.0, "spend": 256000.0}, {"quarter": "Q5", "u10": 14.0, "u50": 19.0, "u90": 24.0, "spend": 243200.0}, {"quarter": "Q6", "u10": 14.0, "u50": 18.0, "u90": 24.0, "spend": 230400.0}, {"quarter": "Q7", "u10": 13.0, "u50": 18.0, "u90": 23.0, "spend": 230400.0}, {"quarter": "Q8", "u10": 11.0, "u50": 16.0, "u90": 21.0, "spend": 204800.0}]}}, PMETA={"scope": "All 14 batteries", "fleet_n": 200, "pack_cost": 12000, "swap_at": 50, "early_rate": 0.12};
+let HZ=24, chart3=null;
+function setH(h){HZ=h;[12,24].forEach(function(k){
+  document.getElementById('h_'+k).classList.toggle('on',k===h);}); draw3();}
+function draw3(){var P=PLANS[String(HZ)];
+  var ACC=getComputedStyle(document.body).getPropertyValue('--acc').trim()||'#1f77b4';
+  document.getElementById('hd3').textContent='Replacement plan — '+PMETA.scope;
+  document.getElementById('hdsub3').textContent=
+    PMETA.fleet_n.toLocaleString()+' vehicles · packs reaching the swap point ('+PMETA.swap_at+
+    ' cycles left) · excludes surprise failures';
+  var M=function(x){return '$'+(x/1e6).toFixed(2)+'M';};
+  document.getElementById('ptiles').innerHTML=
+    '<div class="tile"><div class="tlab">Packs to buy (P50)</div><div class="tval">'+
+      Math.round(P.u50).toLocaleString()+'</div></div>'+
+    '<div class="tile"><div class="tlab">Range P10–P90</div><div class="tval">'+
+      Math.round(P.u10).toLocaleString()+'<small> – '+Math.round(P.u90).toLocaleString()+'</small></div></div>'+
+    '<div class="tile"><div class="tlab">Budget (P50)</div><div class="tval">'+M(P.c50)+'</div></div>'+
+    '<div class="tile"><div class="tlab">Plan against (P90)</div><div class="tval">'+M(P.c90)+'</div></div>'+
+    '<div class="tile"><div class="tlab">Per vehicle / year</div><div class="tval">$'+
+      Math.round(P.per_vehicle_yr).toLocaleString()+'</div></div>';
+  var rows=P.rows;
+  if(chart3)chart3.destroy();
+  chart3=new Chart(document.getElementById('pbars'),{type:'bar',
+    data:{labels:rows.map(function(r){return r.quarter;}),
+      datasets:[{data:rows.map(function(r){return r.spend;}),backgroundColor:ACC,borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:function(c){var r=rows[c.dataIndex];
+        return '$'+Math.round(r.spend).toLocaleString()+'  ·  '+Math.round(r.u50)+' packs (range '+
+               Math.round(r.u10)+'–'+Math.round(r.u90)+')';}}}},
+      scales:{y:{beginAtZero:true,title:{display:true,text:'Estimated spend ($)'},
+        ticks:{callback:function(v){return '$'+(v/1e3).toFixed(0)+'K';}}},x:{grid:{display:false}}}}});
+  document.getElementById('ptbl').innerHTML='<table><thead><tr><th>Quarter</th><th>Buy (P50)</th>'+
+    '<th>Range P10–P90</th><th>Pack + labor</th><th>Est. spend</th></tr></thead><tbody>'+
+    rows.map(function(r){return '<tr><td class="bid">'+r.quarter+'</td><td>'+
+      Math.round(r.u50).toLocaleString()+'</td><td>'+Math.round(r.u10)+' – '+Math.round(r.u90)+
+      '</td><td>$'+(PMETA.pack_cost+800).toLocaleString()+'</td><td>$'+
+      Math.round(r.spend).toLocaleString()+'</td></tr>';}).join('')+'</tbody></table>';
+  document.getElementById('pnote').innerHTML=
+    '<b>Budget against P90, not P50</b> — the midpoint is wrong half the time. Counts come from the '+
+    'validated battery-life model over '+HZ+' months (200 simulations). Excludes surprise failures: '+
+    'the model is too optimistic on '+Math.round(PMETA.early_rate*100)+'% of forecasts (measured on unseen batteries), '+
+    'mostly in the red zone, which adds roughly 8% to the budget. Pack cost ($'+
+    PMETA.pack_cost.toLocaleString()+') is a planning assumption.';}
+</script>
+</body></html>
